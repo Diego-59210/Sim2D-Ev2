@@ -5,9 +5,10 @@ public class CustomCollisionManager : MonoBehaviour
 {
     public static CustomCollisionManager instance;
 
-    private List<SimpleCollider2D> colliders = new List<SimpleCollider2D>();
-    private List<PhysicsBody2D> bodies = new List<PhysicsBody2D>();
-    private List<WaterArea> waters = new List<WaterArea>();
+    private readonly HashSet<SimpleCollider2D> colliders = new();
+    private readonly HashSet<PhysicsBody2D> bodies = new();
+    private readonly HashSet<WaterArea> waters = new();
+    private readonly HashSet<HeatBody2D> heatBodies = new();
 
     void Awake()
     {
@@ -15,21 +16,60 @@ public class CustomCollisionManager : MonoBehaviour
         else Destroy(gameObject);
     }
 
-    void Update()
+    void FixedUpdate()
     {
-        float dt = Time.deltaTime;
+        // Actualizar Bounds antes de la simulación
+        foreach (var col in colliders)
+        {
+            if (col != null && col.isActiveAndEnabled)
+                col.UpdateBounds();
+        }
 
+        // Simular cuerpos físicos
+        float dt = Time.fixedDeltaTime;
         SimulateBodies(dt);
+
+        // Resolver colisiones
         ResolveCollisions();
+
+        // Aplicar fuerzas del agua (si existen)
         ApplyWaterForces();
+
+        // Aplicar transferencia de calor
+        ApplyHeatTransfer(dt);
     }
 
     void SimulateBodies(float dt)
     {
         foreach (var body in bodies)
         {
-            if (!body.isActiveAndEnabled) continue;
-            body.Simulate(dt);
+            if (body != null && body.isActiveAndEnabled)
+                body.Simulate(dt);
+        }
+    }
+    void ApplyWaterForces()
+    {
+        foreach (var w in waters)
+            if (w != null) w.ApplyBuoyancy(bodies);
+    }
+    private void ApplyHeatTransfer(float deltaTime)
+    {
+        foreach (var a in heatBodies)
+        {
+            foreach (var b in heatBodies)
+            {
+                if (a == b) continue;
+
+                float distance = Vector2.Distance(a.transform.position, b.transform.position);
+                float maxRange = Mathf.Max(a.conductionRange, b.conductionRange);
+
+                if (distance <= maxRange)
+                {
+                    // Cuanto más cerca estén, más intensa la transferencia
+                    float distanceFactor = 1f - (distance / maxRange);
+                    a.TransferHeat(b, deltaTime * distanceFactor);
+                }
+            }
         }
     }
     void ResolveCollisions()
@@ -38,11 +78,12 @@ public class CustomCollisionManager : MonoBehaviour
         {
             if (!body.isActiveAndEnabled) continue;
             var colliderA = body.GetComponent<SimpleCollider2D>();
-            if (!colliderA) continue;
+            if (!colliderA || colliderA.isTrigger) continue;
 
             foreach (var colliderB in colliders)
             {
                 if (colliderA == colliderB) continue;
+                if (colliderB.isTrigger) continue;
 
                 if (!string.IsNullOrEmpty(colliderA.ignoreTag) && colliderB.CompareTag(colliderA.ignoreTag))
                     continue;
@@ -58,11 +99,8 @@ public class CustomCollisionManager : MonoBehaviour
         }
     }
 
-    void ApplyWaterForces()
-    {
-        foreach (var w in waters)
-            w.ApplyBuoyancy(bodies);
-    }
+
+
     bool CheckCollision(SimpleCollider2D a, SimpleCollider2D b, out Vector2 normal, out float penetration)
     {
         normal = Vector2.zero;
@@ -111,7 +149,7 @@ public class CustomCollisionManager : MonoBehaviour
         penetration = 0f;
 
         Bounds rb = rect.bounds;
-        Vector2 circleCenter = circle.bounds.center;
+        Vector2 circleCenter = (Vector2)circle.bounds.center;
         Vector2 closest = new Vector2(
             Mathf.Clamp(circleCenter.x, rb.min.x, rb.max.x),
             Mathf.Clamp(circleCenter.y, rb.min.y, rb.max.y)
@@ -136,11 +174,9 @@ public class CustomCollisionManager : MonoBehaviour
         normal = Vector2.zero;
         penetration = 0f;
 
-        Vector2 diff = a.bounds.center - b.bounds.center;
+        Vector2 diff = (Vector2)a.bounds.center - (Vector2)b.bounds.center;
         float dist = diff.magnitude;
-        float rA = a.bounds.extents.x;
-        float rB = b.bounds.extents.x;
-        float sumR = rA + rB;
+        float sumR = a.bounds.extents.x + b.bounds.extents.x;
 
         if (dist < sumR)
         {
@@ -151,13 +187,45 @@ public class CustomCollisionManager : MonoBehaviour
 
         return false;
     }
+    public static bool CheckOverlap(SimpleCollider2D a, SimpleCollider2D b)
+    {
+        if (a.shapeType == ShapeType.Rect && b.shapeType == ShapeType.Rect)
+            return a.bounds.Intersects(b.bounds);
 
-    // Métodos estáticos para registrar objetos físicos
+        if (a.shapeType == ShapeType.Circle && b.shapeType == ShapeType.Circle)
+            return Vector2.Distance(a.circleBounds.center, b.circleBounds.center) <=
+                   (a.circleBounds.radius + b.circleBounds.radius);
+
+        // Circle vs Rect
+        if (a.shapeType == ShapeType.Circle && b.shapeType == ShapeType.Rect)
+            return CircleRectOverlap(a.circleBounds, b.bounds);
+
+        if (a.shapeType == ShapeType.Rect && b.shapeType == ShapeType.Circle)
+            return CircleRectOverlap(b.circleBounds, a.bounds);
+
+        return false;
+    }
+
+    private static bool CircleRectOverlap(CircleBounds circle, Bounds rect)
+    {
+        Vector2 closest = new(
+            Mathf.Clamp(circle.center.x, rect.min.x, rect.max.x),
+            Mathf.Clamp(circle.center.y, rect.min.y, rect.max.y)
+        );
+
+        float dist = Vector2.Distance(circle.center, closest);
+        return dist < circle.radius;
+    }
+
+    public HashSet<SimpleCollider2D> GetAllColliders() => colliders;
+    public HashSet<PhysicsBody2D> GetAllBodies() => bodies;
+
     public static void RegisterCollider(SimpleCollider2D col) => instance?.colliders.Add(col);
     public static void UnregisterCollider(SimpleCollider2D col) => instance?.colliders.Remove(col);
     public static void RegisterBody(PhysicsBody2D body) => instance?.bodies.Add(body);
     public static void UnregisterBody(PhysicsBody2D body) => instance?.bodies.Remove(body);
-    public static void RegisterWater(WaterArea w)=> instance?.waters.Add(w);
+    public static void RegisterWater(WaterArea w) => instance?.waters.Add(w);
     public static void UnregisterWater(WaterArea w) => instance?.waters.Remove(w);
-
+    public static void RegisterHeatBody(HeatBody2D h) => instance?.heatBodies.Add(h);
+    public static void UnregisterHeatBody(HeatBody2D h) => instance?.heatBodies.Remove(h);
 }

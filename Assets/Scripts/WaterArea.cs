@@ -4,14 +4,10 @@ using System.Collections.Generic;
 [RequireComponent(typeof(SpriteRenderer))]
 public class WaterArea : MonoBehaviour
 {
-    [Header("Flotabilidad")]
-    [Tooltip("Fuerza hacia arriba aplicada a los cuerpos sumergidos.")]
+    [Header("Buoyancy")]
+
     public float buoyancyStrength = 15f;
-
-    [Tooltip("Resistencia o amortiguación del agua (reduce velocidad).")]
     public float waterDrag = 0.9f;
-
-    [Tooltip("Densidad del agua (ajusta cuánto flotan los objetos).")]
     public float waterDensity = 1f;
 
     [Header("Debug")]
@@ -32,7 +28,7 @@ public class WaterArea : MonoBehaviour
         CustomCollisionManager.UnregisterWater(this);
     }
 
-    public void ApplyBuoyancy(List<PhysicsBody2D> bodies)
+    public void ApplyBuoyancy(IEnumerable<PhysicsBody2D> bodies)
     {
         foreach (var body in bodies)
         {
@@ -55,13 +51,13 @@ public class WaterArea : MonoBehaviour
 
             if (submergedRatio <= 0f) continue;
 
-            // Calcular fuerza de empuje (Arquímedes)
+            // Calcular fuerza de empuje
             float buoyantForce = buoyancyStrength * submergedRatio * waterDensity;
 
             // Aplicar la fuerza hacia arriba
             body.AddForce(Vector2.up * buoyantForce * Time.deltaTime);
 
-            // Aplicar amortiguación (reduce velocidad vertical)
+            // Aplicar amortiguación
             body.velocity *= Mathf.Lerp(1f, waterDrag, submergedRatio);
         }
     }

@@ -55,7 +55,6 @@ public class PlayerController2D : MonoBehaviour
         canJump = true;
     }
 
-    // Visualización en escena para debug
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.yellow;

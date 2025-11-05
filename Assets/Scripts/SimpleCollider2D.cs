@@ -12,6 +12,7 @@ public class SimpleCollider2D : MonoBehaviour
     public ShapeType shapeType = ShapeType.Rect;
     public string collisionTag = "Default";
     public string ignoreTag = "";
+    public bool isTrigger = false;
 
     [HideInInspector] public Bounds bounds;
     [HideInInspector] public CircleBounds circleBounds;
@@ -44,7 +45,7 @@ public class SimpleCollider2D : MonoBehaviour
         if (shapeType == ShapeType.Circle)
         {
             float radius = Mathf.Max(bounds.extents.x, bounds.extents.y);
-            circleBounds = new CircleBounds(bounds.center, radius);
+            circleBounds = new CircleBounds((Vector2)bounds.center, radius);
         }
     }
 
@@ -81,5 +82,28 @@ public struct CircleBounds
 {
     public Vector2 center;
     public float radius;
-    public CircleBounds(Vector2 c, float r) { center = c; radius = r; }
+
+    public CircleBounds(Vector2 c, float r)
+    {
+        center = c;
+        radius = r;
+    }
+
+    public bool Overlaps(Bounds rect)
+    {
+        Vector2 closest = new Vector2(
+            Mathf.Clamp(center.x, rect.min.x, rect.max.x),
+            Mathf.Clamp(center.y, rect.min.y, rect.max.y)
+        );
+
+        float distSq = (center - closest).sqrMagnitude;
+        return distSq <= radius * radius;
+    }
+
+    public bool Overlaps(CircleBounds other)
+    {
+        float distSq = (center - other.center).sqrMagnitude;
+        float sumR = radius + other.radius;
+        return distSq <= sumR * sumR;
+    }
 }
